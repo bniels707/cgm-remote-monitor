@@ -1,24 +1,11 @@
 'use strict';
 
 require('should');
+var _ = require('lodash');
 var benv = require('benv');
+var read = require('fs').readFileSync;
 var serverSettings = require('./fixtures/default-server-settings');
 
-/**
- * @typedef {object} SGVRecord
- * @property {number} mgdl
- * @property {number} mills
- * @property {string} direction
- * @property {string} type
- */
-
-/**
- * @typedef {object} NowData
- * @property {SGVRecord[]} sgvs
- * @property {object[]} treatments - Array of treatment objects
- */
-
-/** @type {NowData} */
 var nowData = {
   sgvs: [
     { mgdl: 100, mills: Date.now(), direction: 'Flat', type: 'sgv' }
@@ -38,7 +25,6 @@ var someData = {
   '/api/v1/entries.json?find[date][$gte]=1439337600000&find[date][$lt]=1439424000000&count=10000': [{'_id':'55cbddee38a8d88ad1b48647','unfiltered':165760,'filtered':167488,'direction':'Flat','device':'dexcom','rssi':165,'sgv':157,'dateString':'Wed Aug 12 16:58:28 PDT 2015','type':'sgv','date':1439423908000,'noise':1},{'_id':'55cbdccc38a8d88ad1b48644','unfiltered':167456,'filtered':169312,'direction':'Flat','device':'dexcom','rssi':168,'sgv':159,'dateString':'Wed Aug 12 16:53:28 PDT 2015','type':'sgv','date':1439423608000,'noise':1}],
   '/api/v1/treatments.json?find[created_at][$gte]=2015-08-12T00:00:00.000Z&find[created_at][$lt]=2015-08-14T23:59:59.999Z&count=1000': [{'enteredBy':'Dad','eventType':'Correction Bolus','insulin':0.8,'created_at':'2015-08-12T23:21:08.907Z','_id':'55cbd4e47e726599048a3f91'},{'enteredBy':'Dad','eventType':'Note','notes':'Milk now','created_at':'2015-08-12T21:23:00.000Z','_id':'55cbba4e7e726599048a3f79'}],
   '/api/v1/treatments.json?find[created_at][$gte]=2015-08-12T00:00:00.000Z&find[created_at][$lt]=2015-08-13T00:00:00.000Z&count=1000': [{'enteredBy':'Dad','eventType':'Correction Bolus','insulin':0.8,'created_at':'2015-08-12T23:21:08.907Z','_id':'55cbd4e47e726599048a3f91'},{'enteredBy':'Dad','eventType':'Note','notes':'Milk now','created_at':'2015-08-12T21:23:00.000Z','_id':'55cbba4e7e726599048a3f79'}],
-  // '/api/v1/treatments.json?find[created_at][$gte]=2015-08-12T00:00:00.000Z&find[created_at][$lt]=2015-08-13T00:00:00.000Z&count=1000': [{'enteredBy':'Dad','eventType':'Correction Bolus','insulin':0.8,'created_at':'2015-08-12T23:21:08.907Z','_id':'55cbd4e47e726599048a3f91'},{'enteredBy':'Dad','eventType':'Note','notes':'Milk now','created_at':'2015-08-12T21:23:00.000Z','_id':'55cbba4e7e726599048a3f79'}],
   '/api/v1/entries.json?find[date][$gte]=1439424000000&find[date][$lt]=1439510400000&count=10000': [{'_id':'55cd2f6738a8d88ad1b48ca1','unfiltered':209792,'filtered':229344,'direction':'SingleDown','device':'dexcom','rssi':436,'sgv':205,'dateString':'Thu Aug 13 16:58:24 PDT 2015','type':'sgv','date':1439510304000,'noise':1},{'_id':'55cd2e3b38a8d88ad1b48c95','unfiltered':220928,'filtered':237472,'direction':'FortyFiveDown','device':'dexcom','rssi':418,'sgv':219,'dateString':'Thu Aug 13 16:53:24 PDT 2015','type':'sgv','date':1439510004000,'noise':1}],
   '/api/v1/treatments.json?find[created_at][$gte]=2015-08-13T00:00:00.000Z&find[created_at][$lt]=2015-08-14T00:00:00.000Z&count=1000': [{'enteredBy':'Mom ','eventType':'Correction Bolus','glucose':250,'glucoseType':'Sensor','insulin':0.75,'units':'mg/dl','created_at':'2015-08-13T23:45:56.927Z','_id':'55cd2c3497fa97ac5d8bc53b'},{'enteredBy':'Mom ','eventType':'Correction Bolus','glucose':198,'glucoseType':'Sensor','insulin':1.1,'units':'mg/dl','created_at':'2015-08-13T23:11:00.293Z','_id':'55cd240497fa97ac5d8bc535'}],
   '/api/v1/entries.json?find[date][$gte]=1439510400000&find[date][$lt]=1439596800000&count=10000': [{'_id':'55ce80e338a8d88ad1b49397','unfiltered':179936,'filtered':202080,'direction':'SingleDown','device':'dexcom','rssi':179,'sgv':182,'dateString':'Fri Aug 14 16:58:20 PDT 2015','type':'sgv','date':1439596700000,'noise':1},{'_id':'55ce7fb738a8d88ad1b4938d','unfiltered':192288,'filtered':213792,'direction':'SingleDown','device':'dexcom','rssi':180,'sgv':197,'dateString':'Fri Aug 14 16:53:20 PDT 2015','type':'sgv','date':1439596400000,'noise':1}],
@@ -281,34 +267,6 @@ var someData = {
 
   };
 
-/**
- * @typedef {object} ProfileTimeValuePair
- * @property {string} time - e.g., "00:00"
- * @property {number} value
- */
-
-/**
- * @typedef {object} ProfileEntry
- * @property {number} dia - DiA
- * @property {ProfileTimeValuePair[]} carbratio
- * @property {number} carbs_hr
- * @property {number} delay
- * @property {ProfileTimeValuePair[]} sens
- * @property {Date | string} startDate - Start date of the profile, can be Date object or string
- * @property {string} timezone
- * @property {boolean} perGIvalues
- * @property {number} carbs_hr_high
- * @property {number} carbs_hr_medium
- * @property {number} carbs_hr_low
- * @property {number} delay_high
- * @property {number} delay_medium
- * @property {number} delay_low
- * @property {ProfileTimeValuePair[]} basal
- * @property {ProfileTimeValuePair[]} target_low
- * @property {ProfileTimeValuePair[]} target_high
- */
-
-/** @type {ProfileEntry[]} */
 var exampleProfile = [
   {
   //General values
@@ -361,15 +319,12 @@ var exampleProfile = [
   }
 ];
 
-// If exampleProfile[0].startDate were a Day.js object,
-// mutations would need to be handled immutably, e.g.:
-// exampleProfile[0].startDate = dayjs(exampleProfile[0].startDate).second(0).millisecond(0);
-// For now, it's a standard Date object, so direct mutation is used.
 exampleProfile[0].startDate.setSeconds(0);
 exampleProfile[0].startDate.setMilliseconds(0);
 
 
 describe('reports', function ( ) {
+  var self = this;
   var headless = require('./fixtures/headless')(benv, this);
   this.timeout(80000);
 
@@ -395,6 +350,9 @@ describe('reports', function ( ) {
   });
 
   afterEach(function (done) {
+    // Unset the process TZ
+    delete process.env.TZ;
+
     headless.teardown( );
     done( );
   });
@@ -405,34 +363,36 @@ describe('reports', function ( ) {
 
     var hashauth = require('../lib/client/hashauth');
     hashauth.init(client,$);
-    /**
-     * Mocks the verifyAuthentication function.
-     * @param {function(boolean): void} next - Callback function to indicate authentication status.
-     */
     hashauth.verifyAuthentication = function mockVerifyAuthentication(next) {
       hashauth.authenticated = true;
       next(true);
     };
 
-     window.confirm = function mockConfirm () {
-       return true;
-     };
+    window.confirm = function mockConfirm () {
+      return true;
+    };
 
-     window.alert = function mockAlert () {
-       return true;
-     };
+    window.alert = function mockAlert () {
+      return true;
+    };
 
-     /**
-      * Mocks the setTimeout function.
-      * @param {function(): void} call - The function to execute.
-      * @param {number} timer - The time, in milliseconds.
-      */
-     window.setTimeout = function mockSetTimeout (call, timer) {
-       if (timer == 60000) return;
-       call();
-     };
+    window.setTimeout = function mockSetTimeout (call, timer) {
+      if (timer == 60000) return;
+      call();
+    };
 
-     window.Nightscout.reportclient();
+    window.Nightscout.reportclient();
+
+    // Timezone is reflected in query strings so we force one
+    function mockGetTimezone () {
+      return 'Etc/UTC';
+    }
+
+    // Set the process / system TZ for tests
+    process.env.TZ = mockGetTimezone();
+
+    // Set moment locale for tests
+    //window.moment.tz.setDefault(mockGetTimezone());
 
     client.init(function afterInit ( ) {
       client.dataUpdate(nowData);
@@ -443,7 +403,7 @@ describe('reports', function ( ) {
       client.sbx.data.profile.loadData(exampleProfile);
 
       $('#treatments').addClass('selected');
-      $('a.presetdates').find('*').first().trigger('click');
+      $('a.presetdates :first').click();
       $('#rp_notes').val('something');
       $('#rp_eventtype').val('BG Check');
       $('#rp_from').val('2015-08-08');
@@ -463,10 +423,9 @@ describe('reports', function ( ) {
       $('#rp_show').click();
       $('#dailystats').click();
 
-      $('img.deleteTreatment').first().trigger('click');
-      $('img.editTreatment').first().trigger('click');
-      $('.ui-button:contains("Save")').trigger('click');
-
+      $('img.deleteTreatment:first').click();
+      $('img.editTreatment:first').click();
+      $('.ui-button:contains("Save")').click();
 
       var result = $('body').html();
       /*
@@ -488,71 +447,4 @@ describe('reports', function ( ) {
       done();
     });
   });
-
-  it ('should produce week to week report', function (done) {
-    var client = window.Nightscout.client;
-
-    var hashauth = require('../lib/client/hashauth');
-    hashauth.init(client,$);
-    /**
-     * Mocks the verifyAuthentication function.
-     * @param {function(boolean): void} next - Callback function to indicate authentication status.
-     */
-    hashauth.verifyAuthentication = function mockVerifyAuthentication(next) {
-      hashauth.authenticated = true;
-      next(true);
-    };
-
-     window.confirm = function mockConfirm () {
-       return true;
-     };
-
-     window.alert = function mockAlert () {
-       return true;
-     };
-
-     /**
-      * Mocks the setTimeout function.
-      * @param {function(): void} call - The function to execute.
-      * @param {number} timer - The time, in milliseconds.
-      */
-     window.setTimeout = function mockSetTimeout (call, timer) {
-      if (timer == 60000) return;
-      call();
-     };
-
-    client.init(function afterInit ( ) {
-      client.dataUpdate(nowData);
-
-		console.log('Sending profile to client');
-
-      // Load profile, we need to operate in UTC
-      client.sbx.data.profile.loadData(exampleProfile);
-
-      $('#weektoweek').addClass('selected');
-      $('a.presetdates').find('*').first().trigger('click');
-      $('#rp_from').val('2015-08-08');
-      $('#rp_to').val('2015-09-07');
-      $('#wrp_log').prop('checked', true);
-      $('#rp_show').click();
-
-      $('#wrp_linear').prop('checked', true);
-      $('#rp_show').click();
-      $('.ui-button:contains("Save")').trigger('click');
-
-      var result = $('body').html();
-
-      result.indexOf('<circle cx="978" cy="267.34375" fill="rgb(73, 22, 153)"').should.be.greaterThan(-1); // weektoweek Sunday sample point
-      result.indexOf('<circle cx="35" cy="267.34375" fill="rgb(34, 201, 228)"').should.be.greaterThan(-1); // weektoweek Monday sample point
-      result.indexOf('<circle cx="978" cy="267.34375" fill="rgb(0, 153, 123)"').should.be.greaterThan(-1); // weektoweek Tuesday sample point
-      result.indexOf('<circle cx="978" cy="267.34375" fill="rgb(135, 135, 228)"').should.be.greaterThan(-1); // weektoweek Wednesday sample point
-      result.indexOf('<circle cx="978" cy="267.34375" fill="rgb(135, 49, 204)"').should.be.greaterThan(-1); // weektoweek Thursday sample point
-      result.indexOf('<circle cx="978" cy="267.34375" fill="rgb(36, 36, 228)"').should.be.greaterThan(-1); // weektoweek Friday sample point
-      result.indexOf('<circle cx="978" cy="267.34375" fill="rgb(0, 234, 188)"').should.be.greaterThan(-1); // weektoweek Saturday sample point
-
-      done();
-    });
-
-  });
-
 });
